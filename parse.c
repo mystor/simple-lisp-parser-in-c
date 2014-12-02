@@ -3,8 +3,34 @@
 #include<string.h>
 #include<assert.h>
 
+struct chr_lst {
+    char *chrs;
+    int capacity;
+    int len;
+};
+
+struct chr_lst new_chr_lst() {
+    struct chr_lst a_list = {
+        malloc(4 * sizeof(char)),
+        4,
+        0
+    };
+
+    return a_list;
+}
+
+void append_chr_lst(struct chr_lst *lst, char chr) {
+    if (lst->capacity >= lst->len) {
+        lst->capacity *= 4;
+        lst->chrs = realloc(lst->chrs, lst->capacity * sizeof(char));
+    }
+    lst->chrs[lst->len++] = chr;
+}
+
 /* Lexing = String -> Tokens */
 enum token_type {
+    EOF_TOK = -1,
+
     LPAREN_TOK = 0,
     RPAREN_TOK = 1,
     INT_TOK = 2,
@@ -13,113 +39,105 @@ enum token_type {
 
 struct token {
     enum token_type type;
-    
+
     union {
         long long int integer;
         char *symbol;
     };
 };
 
-// increment pointer by one byte
-#define EAT_C(string) string++
-#define PEEK_C(string) string[0]
+// Parser state
+struct p_state {
+    // The file to read chars from
+    FILE *file;
+    // The current token buffer
+    struct token tok;
+};
 
-struct token **lex_string(char* string) {
-    int capacity = 4;
-    int len = 0;
-    struct token **list = malloc(sizeof(struct token*) * capacity);
-    
-    while (*string != '\0') {
-        assert(len <= capacity);
-        
-        struct token *new_token = malloc(sizeof(struct token));
-        
-        // Parse a paren
-        switch (PEEK_C(string)) {
+struct token lex(struct p_state *state);
+
+struct p_state new_p_state(FILE *file) {
+    struct p_state state;
+    state.file = file;
+
+    // Lex the first token into the buffer
+    state.tok = lex(&state);
+
+    return state;
+}
+
+struct token lex(struct p_state *state) {
+    struct token tok;
+
+    for (;;) {
+        int chr = getc(state->file);
+
+        switch (chr) {
+        case EOF:
+            tok.type = EOF_TOK;
+            return tok;
         case '(':
-            // Eat the string
-            EAT_C(string);
-            // Create new token
-            new_token->type = LPAREN_TOK;
-            // Add token to list
-            if (len == capacity) {
-                capacity = capacity + capacity; // :P
-                list = realloc(list, sizeof(struct token*) * capacity);
-            }
-            list[len++] = new_token;
-            continue;
+            tok.type = LPAREN_TOK;
+            return tok;
         case ')':
-            // Eat the string
-            EAT_C(string);
-            // Create new token
-            new_token->type = RPAREN_TOK;
-            // Add token to list
-            if (len == capacity) {
-                capacity = capacity + capacity; // :P
-                list = realloc(list, sizeof(struct token*) * capacity);
-            }
-            list[len++] = new_token;
-            continue;
+            tok.type = RPAREN_TOK;
+            return tok;
         }
-        
+
         // Parse a integer
-        if ('0' <= PEEK_C(string) && PEEK_C(string) <= '9') {
-            long long int tmp_int = 0;
-            while ('0' <= PEEK_C(string) && PEEK_C(string) <= '9') {
-                tmp_int *= 10;
-                tmp_int += PEEK_C(string) - '0';
-                EAT_C(string);
+        if ('0' <= chr && chr <= '9') {
+            // Create the token
+            tok.type = INT_TOK;
+            tok.integer = chr - '0';
+
+            // Read in the integer
+            chr = getc(state->file);
+            while ('0' <= chr && chr <= '9') {
+                tok.integer *= 10;
+                tok.integer += chr - '0';
+
+                chr = getc(state->file);
             }
-            // Create new token
-            new_token->type = INT_TOK;
-            new_token->integer = tmp_int;
-            // Add token to list
-            if (len == capacity) {
-                capacity = capacity + capacity; // :P
-                list = realloc(list, sizeof(struct token*) * capacity);
-            }
-            list[len++] = new_token;
-            continue;
+
+            ungetc(chr, state->file);
+
+            return tok;
         }
 
         // Parse a symbol
-        if (PEEK_C(string) != ' ' && PEEK_C(string) != '\n') {
-            char* symbol_start = string;
-            while (PEEK_C(string) != ' ' && PEEK_C(string) != '\n' &&
-                   PEEK_C(string) != '(' && PEEK_C(string) != ')' && PEEK_C(string) != '\0') {
-                EAT_C(string);
+        if (chr != ' ' && chr != '\n') {
+            // Read in the characters into the list
+            struct chr_lst symb = new_chr_lst();
+
+            while (chr != ' ' && chr != '\n' && chr != '(' && chr != ')') {
+                append_chr_lst(&symb, chr);
+
+                chr = getc(state->file);
             }
-            int length = (string - symbol_start);
-            char* symbol = malloc(sizeof(char) * (length + 1));
-            // Copy the string in
-            strncpy(symbol, symbol_start, length);
-            // Set the null byte at the end
-            symbol[length] = '\0';
-            
-            // Create new token
-            new_token->type = SYMBOL_TOK;
-            new_token->symbol = symbol;
-            // Add token to list
-            if (len == capacity) {
-                capacity = capacity + capacity; // :P
-                list = realloc(list, sizeof(struct token*) * capacity);
-            }
-            list[len++] = new_token;
-            continue;
-        } else {
-          // We saw a space or newline, we need to skip it
-          EAT_C(string);
+
+            // Put the character back
+            ungetc(chr, state->file);
+
+            append_chr_lst(&symb, '\0');
+
+            // Create the token
+            tok.type = SYMBOL_TOK;
+            tok.symbol = symb.chrs;
+            return tok;
         }
-    }
-    
-    if (len == capacity) {
-        capacity = capacity + capacity; // :P
-        list = realloc(list, sizeof(struct token*) * capacity);
-    }
 
-    list[len] = NULL;
+        // If we read anything else, skip it
+    }
+}
 
-    return list;
+struct token peek_tok(struct p_state *state) {
+    return state->tok;
+}
+
+struct token eat_tok(struct p_state *state) {
+    struct token tok = state->tok;
+    state->tok = lex(state);
+    return tok;
 }
 
 /* Parsing = Tokens -> AST (Abstract Syntax Tree) */
@@ -134,7 +152,7 @@ enum sexp_type {
 
 struct sexp {
     enum sexp_type type;
-    
+
     union {
         struct sexp *list; // NULL-terminated
         char *symbol;
@@ -142,50 +160,51 @@ struct sexp {
     };
 };
 
-struct sexp parse_sexp(struct token ***tokens) {
+struct sexp parse_sexp(struct p_state *state) {
     struct sexp new_sexp;
-    enum token_type first_token_type = (*tokens)[0]->type;
-    
-    switch (first_token_type) {
+
+    struct token tok = eat_tok(state);
+
+    switch (tok.type) {
     case LPAREN_TOK:
         new_sexp.type = LIST;
-        
-        (*tokens)++;
-        
+
+        // Read in sexps to create a list
         int len = 0;
         int capacity = 4;
         struct sexp *list = malloc(sizeof(struct sexp) * capacity);
-        
-        while ((*tokens)[0]->type != RPAREN_TOK) {
+
+        while (peek_tok(state).type != RPAREN_TOK) { // Stop when we reach an RPAREN
             if (len == capacity) {
                 capacity *= 2;
                 list = realloc(list, sizeof(struct sexp) * capacity);
             }
-            list[len++] = parse_sexp(tokens);
+            list[len++] = parse_sexp(state);
         }
 
-        // At this point we're looking at an RPAREN_TOK, let's eat it!
-        (*tokens)++;
-        
+        eat_tok(state);
+
         if (len == capacity) {
             capacity *= 2;
             list = realloc(list, sizeof(struct sexp) * capacity);
         }
         list[len].type = END_OF_LIST;
-        
+
         new_sexp.list = list;
+
         return new_sexp;
     case INT_TOK:
         new_sexp.type = INTEGER;
-        new_sexp.integer = (*tokens)[0]->integer;
-        (*tokens)++; // Everywhere, drop the first token
+        new_sexp.integer = tok.integer;
+
         return new_sexp;
     case SYMBOL_TOK:
         new_sexp.type = SYMBOL;
-        new_sexp.symbol = (*tokens)[0]->symbol;
-        (*tokens)++;
+        new_sexp.symbol = tok.symbol;
+
         return new_sexp;
     default:
+        printf("Invalid start of sexp token: %d\n", tok.type);
         assert(0 && "Invalid start of sexp token!");
     }
 }
@@ -195,89 +214,67 @@ A program is a list of s-expressions. s-expressions are (lists of elements) or s
 
 parse(tokens) parses an entire program by parsing sexp until it reaches a NULL
 */
-struct sexp *parse(struct token ***tokens) {
+struct sexp *parse(struct p_state *state) {
     int len = 0;
     int capacity = 4;
     struct sexp *list = malloc(sizeof(struct sexp) * capacity);
-    
-    while ((*tokens)[0] != NULL) {
+
+    while (peek_tok(state).type != EOF_TOK) {
         if (len == capacity) {
             capacity *= 2;
             list = realloc(list, sizeof(struct sexp) * capacity);
         }
-        list[len++] = parse_sexp(tokens);
+        list[len++] = parse_sexp(state);
     }
-    
+
     if (len == capacity) {
         capacity *= 2;
         list = realloc(list, sizeof(struct sexp) * capacity);
     }
     list[len].type = END_OF_LIST;
-    
+
     return list;
 }
 
 void print_ast_node(struct sexp ast_node) {
     switch (ast_node.type) {
-        case INTEGER:
-            printf("INTEGER(%lld)", ast_node.integer);
-            break;
-        case SYMBOL:
-            printf("SYMBOL(%s)", ast_node.symbol);
-            break;
-        case LIST:
-            printf("LIST(\n");
-            struct sexp *list = ast_node.list;
-            while (list->type != END_OF_LIST) {
-                print_ast_node(*list);
-                printf(",");
-                list++;
-            }
-            printf("\n)");
-            break;
+    case INTEGER:
+        printf("INTEGER(%lld)", ast_node.integer);
+        break;
+    case SYMBOL:
+        printf("SYMBOL(%s)", ast_node.symbol);
+        break;
+    case LIST:
+        printf("LIST(\n");
+        struct sexp *list = ast_node.list;
+        while (list->type != END_OF_LIST) {
+            print_ast_node(*list);
+            printf(",");
+            list++;
+        }
+        printf("\n)");
+        break;
+    case END_OF_LIST:
+        printf("**EOL**\n");
+        break;
     }
 }
 
 int main() {
-    struct token **lexed_string = lex_string("(+ 1 2)");
-    
-    struct token **ls2 = lexed_string;
-    while (*ls2 != NULL) {
-      printf("%d,\n", (*ls2)->type);
-      ls2++;
-    }
-    
+    // Create the input file.
+    // Right now, this requires an actual file, but on non-mac os x
+    // systems, there is a function fmemopen() which lets you open
+    // an in-memory buffer as a file handle. There are shims for it on
+    // mac os x, but its more complex than it needs to be
+    FILE *input = fopen("example.lisp", "r");
 
-    struct sexp *parsed = parse(&lexed_string);
-    
+    // Create the parser state object. This could probably be moved into parse()
+    // but for now you need to do it seperately
+    struct p_state state = new_p_state(input);
+
+    // parse the lisp code into an ast
+    struct sexp *parsed = parse(&state);
+
+    // Display the resulting ast
     print_ast_node(parsed[0]);
 }
-
-/*
-
-() <= empty list
-
-(a b c) <= symbols a, b, and c
-(+ 1 (+ 1 3))
-
-(1 3 5)
-(a 1 3 5)
-
-================
-| Jake's Notes |
-================
-
-Recursion vs Looping?
-First time implementing a lisp?
-Compare lisp parsing to other language parsing.
-Learn about the other stages in compiling.
-How might lisp deal with functions and the such for parsing.
-
-================
-Usually you lex a token and then parse a token all at the same time
-
-
-
-
-
-*/
