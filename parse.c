@@ -1,5 +1,6 @@
 #include<stdio.h>
 #include<stdlib.h>
+#include<string.h>
 #include<assert.h>
 
 /* Lexing = String -> Tokens */
@@ -88,8 +89,12 @@ struct token **lex_string(char* string) {
                    PEEK_C(string) != '(' && PEEK_C(string) != ')' && PEEK_C(string) != '\0') {
                 EAT_C(string);
             }
-            int length = (string - symbol_start) + 1;
-            char* symbol = malloc(sizeof(char) * length);
+            int length = (string - symbol_start);
+            char* symbol = malloc(sizeof(char) * (length + 1));
+            // Copy the string in
+            strncpy(symbol, symbol_start, length);
+            // Set the null byte at the end
+            symbol[length] = '\0';
             
             // Create new token
             new_token->type = SYMBOL_TOK;
@@ -101,6 +106,9 @@ struct token **lex_string(char* string) {
             }
             list[len++] = new_token;
             continue;
+        } else {
+          // We saw a space or newline, we need to skip it
+          EAT_C(string);
         }
     }
     
@@ -155,6 +163,9 @@ struct sexp parse_sexp(struct token ***tokens) {
             }
             list[len++] = parse_sexp(tokens);
         }
+
+        // At this point we're looking at an RPAREN_TOK, let's eat it!
+        (*tokens)++;
         
         if (len == capacity) {
             capacity *= 2;
@@ -175,8 +186,7 @@ struct sexp parse_sexp(struct token ***tokens) {
         (*tokens)++;
         return new_sexp;
     default:
-        // WHAT THE FUCK
-        assert(0);
+        assert(0 && "Invalid start of sexp token!");
     }
 }
 
@@ -230,6 +240,14 @@ void print_ast_node(struct sexp ast_node) {
 
 int main() {
     struct token **lexed_string = lex_string("(+ 1 2)");
+    
+    struct token **ls2 = lexed_string;
+    while (*ls2 != NULL) {
+      printf("%d,\n", (*ls2)->type);
+      ls2++;
+    }
+    
+
     struct sexp *parsed = parse(&lexed_string);
     
     print_ast_node(parsed[0]);
