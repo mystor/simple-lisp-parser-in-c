@@ -2,6 +2,7 @@
 #include<stdlib.h>
 #include<string.h>
 #include<assert.h>
+#include "parse.h"
 
 struct chr_lst {
     char *chrs;
@@ -28,31 +29,6 @@ void append_chr_lst(struct chr_lst *lst, char chr) {
 }
 
 /* Lexing = String -> Tokens */
-enum token_type {
-    EOF_TOK = -1,
-
-    LPAREN_TOK = 0,
-    RPAREN_TOK = 1,
-    INT_TOK = 2,
-    SYMBOL_TOK = 3
-};
-
-struct token {
-    enum token_type type;
-
-    union {
-        long long int integer;
-        char *symbol;
-    };
-};
-
-// Parser state
-struct p_state {
-    // The file to read chars from
-    FILE *file;
-    // The current token buffer
-    struct token tok;
-};
 
 struct token lex(struct p_state *state);
 
@@ -141,25 +117,6 @@ struct token eat_tok(struct p_state *state) {
 }
 
 /* Parsing = Tokens -> AST (Abstract Syntax Tree) */
-
-// "Discriminator"
-enum sexp_type {
-    LIST = 0,
-    SYMBOL = 1,
-    INTEGER = 2,
-
-    END_OF_LIST = -1
-};
-
-struct sexp {
-    enum sexp_type type;
-
-    union {
-        struct sexp *list; // NULL-terminated
-        char *symbol;
-        long long int integer;
-    };
-};
 
 struct sexp parse_sexp(struct p_state *state) {
     struct sexp new_sexp;
@@ -261,21 +218,3 @@ void print_ast_node(struct sexp ast_node) {
     }
 }
 
-int main() {
-    // Create the input file.
-    // Right now, this requires an actual file, but on non-mac os x
-    // systems, there is a function fmemopen() which lets you open
-    // an in-memory buffer as a file handle. There are shims for it on
-    // mac os x, but its more complex than it needs to be
-    FILE *input = fopen("example.lisp", "r");
-
-    // Create the parser state object. This could probably be moved into parse()
-    // but for now you need to do it seperately
-    struct p_state state = new_p_state(input);
-
-    // parse the lisp code into an ast
-    struct sexp *parsed = parse(&state);
-
-    // Display the resulting ast
-    print_ast_node(parsed[0]);
-}
