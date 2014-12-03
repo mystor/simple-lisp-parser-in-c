@@ -21,7 +21,7 @@ struct chr_lst new_chr_lst() {
 
 void append_chr_lst(struct chr_lst *lst, char chr) {
     if (lst->capacity >= lst->len) {
-        lst->capacity *= 4;
+        lst->capacity *= 2;
         lst->chrs = realloc(lst->chrs, lst->capacity * sizeof(char));
     }
     lst->chrs[lst->len++] = chr;
@@ -147,6 +147,7 @@ enum sexp_type {
     LIST = 0,
     SYMBOL = 1,
     INTEGER = 2,
+
     END_OF_LIST = -1
 };
 
